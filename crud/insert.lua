@@ -2,6 +2,7 @@ local checks = require('checks')
 local errors = require('errors')
 
 local call = require('crud.common.call')
+local storage_c = require('crud.common.storage_c')
 local const = require('crud.common.const')
 local utils = require('crud.common.utils')
 local sharding = require('crud.common.sharding')
@@ -13,7 +14,6 @@ local InsertError = errors.new_class('InsertError', {capture_stack = false})
 local insert = {}
 
 local INSERT_FUNC_NAME = 'insert_on_storage'
-local CRUD_INSERT_FUNC_NAME = utils.get_storage_call(INSERT_FUNC_NAME)
 
 local function insert_on_storage(space_name, tuple, opts)
     dev_checks('string', 'table', {
@@ -101,7 +101,7 @@ local function call_insert_on_router(vshard_router, space_name, original_tuple, 
     }
 
     local storage_result, err = call.single_direct(vshard_router,
-        sharding_data.bucket_id, CRUD_INSERT_FUNC_NAME,
+        sharding_data.bucket_id, storage_c.func_name('insert'),
         {space_name, tuple, insert_on_storage_opts},
         call_opts
     )
