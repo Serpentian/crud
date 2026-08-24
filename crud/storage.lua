@@ -5,7 +5,6 @@ local stash = require('crud.common.stash')
 local utils = require('crud.common.utils')
 
 local schema = require('crud.schema')
-local rebalance = require('crud.common.rebalance')
 local call = require('crud.common.call')
 local sharding_metadata = require('crud.common.sharding.sharding_metadata')
 local insert = require('crud.insert')
@@ -65,7 +64,6 @@ local function init_storage_call(user, storage_api)
 end
 
 local modules_with_storage_api = {
-    rebalance,
     call,
     sharding_metadata,
     insert,
@@ -113,7 +111,6 @@ local function init_impl()
     end
 
     schema.init()
-    rebalance.init()
 end
 
 function storage.init(opts)

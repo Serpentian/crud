@@ -126,33 +126,9 @@ router and storage instances.
 
 > [!NOTE]
 >
-> After changing the cluster configuration (for example, adding a new replica set or changing their weights)
-> bucket rebalancing will start. At that moment the cluster will automatically enable "safe mode" to ensure
-> data consistency and integrity.
-> 
-> In safe mode, cluster performance is reduced (approx. 15% for replace operations). Follow these steps to return
-> the cluster back to normal operation after rebalancing is complete:
->
-> 1. Wait until all buckets have finished migrating.
-> 2. Clear the route map cache on _each_ router:
->    ```lua
->    crud.rebalance.router_cache_clear()
->    ```
-> 3. Disable safe mode on every storage (both masters and replicas):
->    ```lua
->    _crud.rebalance_safe_mode_disable()
->    ```
->
-> Following these steps ensures correct routing and consistent CRUD behavior after topology updates.
->
-> Failure to follow these steps may lead to issues such as duplicated records,
-> missing updates, or inconsistent state across replica sets due to incorrect routing during or after rebalancing.
->
-> Safe mode is enabled on each storage node independently and only if the given node participates in the bucket
-> rebalancing process. You can check if safe mode is enabled on the node by calling
-> `_crud.rebalance_safe_mode_status()` method or by checking `tnt_crud_storage_safe_mode_enabled` metric values.
->
-> Requests to `vinyl` spaces always run in safe mode regardless of current safe mode status.
+> All operations always take vshard bucket references, so requests are
+> protected from bucket rebalancing at any moment. No manual mode switching
+> is needed after changing the cluster topology.
 
 > [!IMPORTANT]
 >

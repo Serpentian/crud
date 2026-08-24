@@ -2,7 +2,6 @@ local checks = require('checks')
 local errors = require('errors')
 
 local call = require('crud.common.call')
-local compat_warn = require('crud.common.compat_warn')
 local const = require('crud.common.const')
 local utils = require('crud.common.utils')
 local sharding = require('crud.common.sharding')
@@ -10,7 +9,6 @@ local sharding_key_module = require('crud.common.sharding.sharding_key')
 local sharding_metadata_module = require('crud.common.sharding.sharding_metadata')
 local dev_checks = require('crud.common.dev_checks')
 local schema = require('crud.common.schema')
-local bucket_ref_unref = require('crud.common.sharding.bucket_ref_unref')
 
 local GetError = errors.new_class('GetError', {capture_stack = false})
 
@@ -21,7 +19,9 @@ local CRUD_GET_FUNC_NAME = utils.get_storage_call(GET_FUNC_NAME)
 
 local function get_on_storage(space_name, key, field_names, opts)
     dev_checks('string', '?', '?table', {
-        -- bucket_id is optional to support old routers.
+        -- bucket_id is accepted for compatibility and ignored: the
+        -- request comes through vshard.storage.call, which holds
+        -- the bucket ref for the whole call.
         bucket_id = '?number|cdata',
         sharding_key_hash = '?number',
         sharding_func_hash = '?number',
@@ -45,33 +45,13 @@ local function get_on_storage(space_name, key, field_names, opts)
         return nil, err
     end
 
-    -- Skip bucket reference if bucket_id is not provided to support old routers.
-    local ref_ok, bucket_ref_err, unref
-    if opts.bucket_id ~= nil then
-        ref_ok, bucket_ref_err, unref = bucket_ref_unref.bucket_refro(opts.bucket_id, space.engine)
-        if not ref_ok then
-            return nil, bucket_ref_err
-        end
-    else
-        compat_warn.log_nil_bucket_id('get', space_name, space.engine)
-    end
-
     -- add_space_schema_hash is false because
     -- reloading space format on router can't avoid get error on storage
-    local result = schema.wrap_func_result(space, space.get, {
+    return schema.wrap_func_result(space, space.get, {
         add_space_schema_hash = false,
         field_names = field_names,
         fetch_latest_metadata = opts.fetch_latest_metadata,
     }, space, key)
-
-    if unref ~= nil then
-        local unref_ok, err_unref = unref(opts.bucket_id, space.engine)
-        if not unref_ok then
-            return nil, err_unref
-        end
-    end
-
-    return result
 end
 
 get.storage_api = {[GET_FUNC_NAME] = get_on_storage}
@@ -158,7 +138,7 @@ local function call_get_on_router(vshard_router, space_name, key, opts)
         request_timeout = mode == 'read' and opts.request_timeout or nil,
     }
 
-    local storage_result, err = call.single(vshard_router,
+    local storage_result, err = call.single_direct(vshard_router,
         bucket_id_data.bucket_id, CRUD_GET_FUNC_NAME,
         {space_name, key, opts.fields, get_on_storage_opts},
         call_opts

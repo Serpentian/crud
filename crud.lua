@@ -24,7 +24,6 @@ local readview = require('crud.readview')
 local schema = require('crud.schema')
 local storage_info = require('crud.storage_info')
 local storage = require('crud.storage')
-local rebalance = require('crud.common.rebalance')
 
 local crud = {}
 
@@ -164,16 +163,8 @@ crud.readview = readview.new
 -- @function schema
 crud.schema = schema.call
 
-crud.rebalance = {}
-
--- @refer rebalance.router_cache_clear
--- @function router_cache_clear
-crud.rebalance.router_cache_clear = rebalance.router_api.cache_clear
-
 function crud.init_router()
     rawset(_G, 'crud', crud)
-
-    rebalance.init_router_metrics()
 end
 
 function crud.stop_router()

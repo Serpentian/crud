@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+* Simple DML operations (`get`, `insert`, `replace`, `update`, `upsert`,
+  `delete`) are routed through `vshard.router.call` and the regular
+  `vshard.storage.call` wrapper instead of the crud-side trampoline. vshard
+  takes the bucket reference for the whole call and performs its own retries
+  and redirects. Note: on this path the storage functions no longer run under
+  `box.session.su(effective_user)` — they are executed with the definer
+  rights of the setuid `vshard.storage.call` function.
+
+### Removed
+* Fast/safe modes of bucket referencing. Bucket references are now always
+  taken: by vshard itself for the simple DML operations and by crud for the
+  batch (`*_many`) and `locate` operations. The
+  `_crud.rebalance_safe_mode_{status,enable,disable}` functions,
+  `crud.rebalance.router_cache_clear`, the `_bucket` trigger and the
+  `tnt_crud_storage_safe_mode_enabled`, `tnt_crud_router_cache_clear_ts`,
+  `tnt_crud_storage_nil_bucket_id_compat_total` metrics are removed.
+
 ## [1.7.5] - 15-07-26
 
 ### Added

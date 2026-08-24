@@ -1,5 +1,4 @@
 local ratelimit = require('crud.ratelimit')
-local rebalance = require('crud.common.rebalance')
 
 local WARN_INTERVAL_SECONDS = 60
 local WARN_BURST_COUNT = 1
@@ -20,8 +19,6 @@ local function log_nil_bucket_id(operation, space_name, engine)
     )
 
     compat_rl:log_warn(msg)
-
-    rebalance.inc_nil_bucket_id_compat(operation, engine)
 end
 
 return {

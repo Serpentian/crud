@@ -47,14 +47,14 @@ local function locate_on_storage(space_name, key, opts)
         return {err = sharding_err}
     end
 
-    local ref_ok, bucket_ref_err, unref = bucket_ref_unref.bucket_refro(opts.bucket_id, space.engine)
+    local ref_ok, bucket_ref_err, unref = bucket_ref_unref.bucket_refro(opts.bucket_id)
     if not ref_ok then
         return {err = bucket_ref_err}
     end
 
     local ok, locate_res, locate_err = pcall(cooler.locate, space_name, key, opts.bucket_id)
 
-    local unref_ok, err_unref = unref(opts.bucket_id, space.engine)
+    local unref_ok, err_unref = unref(opts.bucket_id)
     if not unref_ok then
         return {err = err_unref}
     end

@@ -2,7 +2,6 @@ local checks = require('checks')
 local errors = require('errors')
 
 local call = require('crud.common.call')
-local compat_warn = require('crud.common.compat_warn')
 local const = require('crud.common.const')
 local utils = require('crud.common.utils')
 local sharding = require('crud.common.sharding')
@@ -10,7 +9,6 @@ local sharding_key_module = require('crud.common.sharding.sharding_key')
 local sharding_metadata_module = require('crud.common.sharding.sharding_metadata')
 local dev_checks = require('crud.common.dev_checks')
 local schema = require('crud.common.schema')
-local bucket_ref_unref = require('crud.common.sharding.bucket_ref_unref')
 
 local DeleteError = errors.new_class('DeleteError', {capture_stack = false})
 
@@ -21,7 +19,9 @@ local CRUD_DELETE_FUNC_NAME = utils.get_storage_call(DELETE_FUNC_NAME)
 
 local function delete_on_storage(space_name, key, field_names, opts)
     dev_checks('string', '?', '?table', {
-        -- bucket_id is optional to support old routers.
+        -- bucket_id is accepted for compatibility and ignored: the
+        -- request comes through vshard.storage.call, which holds
+        -- the bucket ref for the whole call.
         bucket_id = '?number|cdata',
         sharding_key_hash = '?number',
         sharding_func_hash = '?number',
@@ -46,34 +46,14 @@ local function delete_on_storage(space_name, key, field_names, opts)
         return nil, err
     end
 
-    -- Skip bucket reference if bucket_id is not provided to support old routers.
-    local ref_ok, bucket_ref_err, unref
-    if opts.bucket_id ~= nil then
-        ref_ok, bucket_ref_err, unref = bucket_ref_unref.bucket_refrw(opts.bucket_id, space.engine)
-        if not ref_ok then
-            return nil, bucket_ref_err
-        end
-    else
-        compat_warn.log_nil_bucket_id('delete', space_name, space.engine)
-    end
-
     -- add_space_schema_hash is false because
     -- reloading space format on router can't avoid delete error on storage
-    local result =  schema.wrap_func_result(space, space.delete, {
+    return schema.wrap_func_result(space, space.delete, {
         add_space_schema_hash = false,
         field_names = field_names,
         noreturn = opts.noreturn,
         fetch_latest_metadata = opts.fetch_latest_metadata,
     }, space, key)
-
-    if unref ~= nil then
-        local unref_ok, err_unref = unref(opts.bucket_id, space.engine)
-        if not unref_ok then
-            return nil, err_unref
-        end
-    end
-
-    return result
 end
 
 delete.storage_api = {[DELETE_FUNC_NAME] = delete_on_storage}
@@ -153,7 +133,7 @@ local function call_delete_on_router(vshard_router, space_name, key, opts)
         timeout = opts.timeout,
     }
 
-    local storage_result, err = call.single(vshard_router,
+    local storage_result, err = call.single_direct(vshard_router,
         bucket_id_data.bucket_id, CRUD_DELETE_FUNC_NAME,
         {space_name, key, opts.fields, delete_on_storage_opts},
         call_opts

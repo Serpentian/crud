@@ -982,31 +982,6 @@ function helpers.start_cluster(g, cartridge_cfg, vshard_cfg, tarantool3_cluster_
         end
     end
 
-    if g.params and g.params.safe_mode ~= nil then
-        local safe_mode_func = '_crud.rebalance_safe_mode_disable'
-        if g.params.safe_mode then
-            safe_mode_func = '_crud.rebalance_safe_mode_enable'
-        end
-        helpers.call_on_storages(g.cluster, function(server)
-            server.net_box:eval([[
-                box.schema.space.create('_crud_settings_local', {
-                    engine = 'memtx',
-                    format = {
-                        { name = 'key', type = 'string' },
-                        { name = 'value', type = 'any' },
-                    },
-                    is_local = true,
-                    if_not_exists = true,
-                })
-                box.space._crud_settings_local:create_index('primary', { parts = { 'key' }, if_not_exists = true })
-            ]])
-            t.helpers.retrying(
-                    {timeout = 60, delay = 0.1},
-                    server.call,
-                    server, safe_mode_func
-            )
-        end)
-    end
 end
 
 local function count_storages_in_topology(g, backend, vshard_group, storage_roles)
@@ -1204,33 +1179,9 @@ function helpers.is_cartridge_suite_supported()
     return is_module_provided and is_tarantool_supports
 end
 
-function helpers.safe_mode_matrix(base_matrix)
-    base_matrix = base_matrix or {{}}
-
-    local safe_mode_params = {
-        { safe_mode = true },
-        { safe_mode = false },
-    }
-
-    local matrix = {}
-    for _, params in ipairs(safe_mode_params) do
-        for _, base in ipairs(base_matrix) do
-            base = table.deepcopy(base)
-            base.safe_mode = params.safe_mode
-            table.insert(matrix, base)
-        end
-    end
-
-    return matrix
-end
-
 function helpers.backend_matrix(base_matrix, opts)
     base_matrix = base_matrix or {{}}
     opts = opts or {}
-
-    if not opts.skip_safe_mode then
-        base_matrix = helpers.safe_mode_matrix(base_matrix)
-    end
 
     local backend_params = {
         {

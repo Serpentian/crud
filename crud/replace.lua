@@ -7,7 +7,6 @@ local utils = require('crud.common.utils')
 local sharding = require('crud.common.sharding')
 local dev_checks = require('crud.common.dev_checks')
 local schema = require('crud.common.schema')
-local bucket_ref_unref = require('crud.common.sharding.bucket_ref_unref')
 
 local ReplaceError = errors.new_class('ReplaceError', { capture_stack = false })
 
@@ -43,28 +42,15 @@ local function replace_on_storage(space_name, tuple, opts)
         return nil, err
     end
 
-    local bucket_id = tuple[utils.get_bucket_id_fieldno(space)]
-    local ref_ok, bucket_ref_err, unref = bucket_ref_unref.bucket_refrw(bucket_id, space.engine)
-    if not ref_ok then
-        return nil, bucket_ref_err
-    end
-
     -- add_space_schema_hash is true only in case of replace_object
     -- the only one case when reloading schema can avoid insert error
     -- is flattening object on router
-    local result = schema.wrap_func_result(space, space.replace, {
+    return schema.wrap_func_result(space, space.replace, {
         add_space_schema_hash = opts.add_space_schema_hash,
         field_names = opts.fields,
         noreturn = opts.noreturn,
         fetch_latest_metadata = opts.fetch_latest_metadata,
     }, space, tuple)
-
-    local unref_ok, err_unref = unref(bucket_id, space.engine)
-    if not unref_ok then
-        return nil, err_unref
-    end
-
-    return result
 end
 
 replace.storage_api = {[REPLACE_FUNC_NAME] = replace_on_storage}
@@ -113,7 +99,7 @@ local function call_replace_on_router(vshard_router, space_name, original_tuple,
         mode = 'write',
         timeout = opts.timeout,
     }
-    local storage_result, err = call.single(vshard_router,
+    local storage_result, err = call.single_direct(vshard_router,
         sharding_data.bucket_id, CRUD_REPLACE_FUNC_NAME,
         {space_name, tuple, replace_on_storage_opts},
         call_opts

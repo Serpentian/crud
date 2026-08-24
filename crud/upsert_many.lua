@@ -57,7 +57,7 @@ local function upsert_many_on_storage(space_name, tuples, operations, opts)
     local errs = {}
     local replica_schema_version = nil
 
-    local ref_ok, bucket_ref_err, unref = bucket_ref_unref.bucket_refrw_many(bucket_ids, space.engine)
+    local ref_ok, bucket_ref_err, unref = bucket_ref_unref.bucket_refrw_many(bucket_ids)
     if not ref_ok then
         table.insert(errs, bucket_ref_err)
         return nil, errs, replica_schema_version
@@ -99,7 +99,7 @@ local function upsert_many_on_storage(space_name, tuples, operations, opts)
 
                 if opts.rollback_on_error == true then
                     box.rollback()
-                    local unref_ok, bucket_unref_err = unref(bucket_ids, space.engine)
+                    local unref_ok, bucket_unref_err = unref(bucket_ids)
                     if not unref_ok then
                         table.insert(errs, bucket_unref_err)
                         return nil, errs, replica_schema_version
@@ -113,7 +113,7 @@ local function upsert_many_on_storage(space_name, tuples, operations, opts)
                 end
 
                 box.commit()
-                local unref_ok, bucket_unref_err = unref(bucket_ids, space.engine)
+                local unref_ok, bucket_unref_err = unref(bucket_ids)
                 if not unref_ok then
                     table.insert(errs, bucket_unref_err)
                     return nil, errs, replica_schema_version
@@ -129,7 +129,7 @@ local function upsert_many_on_storage(space_name, tuples, operations, opts)
     if next(errs) ~= nil then
         if opts.rollback_on_error == true then
             box.rollback()
-            local unref_ok, bucket_unref_err = unref(bucket_ids, space.engine)
+            local unref_ok, bucket_unref_err = unref(bucket_ids)
             if not unref_ok then
                 table.insert(errs, bucket_unref_err)
                 return nil, errs, replica_schema_version
@@ -143,7 +143,7 @@ local function upsert_many_on_storage(space_name, tuples, operations, opts)
         end
 
         box.commit()
-        local unref_ok, bucket_unref_err = unref(bucket_ids, space.engine)
+        local unref_ok, bucket_unref_err = unref(bucket_ids)
         if not unref_ok then
             table.insert(errs, bucket_unref_err)
             return nil, errs, replica_schema_version
@@ -153,7 +153,7 @@ local function upsert_many_on_storage(space_name, tuples, operations, opts)
     end
 
     box.commit()
-    local unref_ok, bucket_unref_err = unref(bucket_ids, space.engine)
+    local unref_ok, bucket_unref_err = unref(bucket_ids)
     if not unref_ok then
         table.insert(errs, bucket_unref_err)
         return nil, errs, replica_schema_version

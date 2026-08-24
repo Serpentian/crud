@@ -20,7 +20,13 @@ end
 local function check_no_yields()
 	local info_curr = fiber.self():info()
 	local info_prev = registry[info_curr.fid]
-	assert(info_prev ~= nil, "fiber is not registered")
+	if info_prev == nil then
+		-- The request came outside of guard(): simple DML goes
+		-- through vshard.storage.call instead of the
+		-- call_on_storage trampoline, so there is no registered
+		-- baseline to compare the csw counter with.
+		return
+	end
 	assert(info_curr.csw == info_prev.csw, "yield happened during fiber execution")
 end
 

@@ -2,7 +2,6 @@ local checks = require('checks')
 local errors = require('errors')
 
 local call = require('crud.common.call')
-local compat_warn = require('crud.common.compat_warn')
 local const = require('crud.common.const')
 local utils = require('crud.common.utils')
 local sharding = require('crud.common.sharding')
@@ -10,7 +9,6 @@ local sharding_key_module = require('crud.common.sharding.sharding_key')
 local sharding_metadata_module = require('crud.common.sharding.sharding_metadata')
 local dev_checks = require('crud.common.dev_checks')
 local schema = require('crud.common.schema')
-local bucket_ref_unref = require('crud.common.sharding.bucket_ref_unref')
 
 local UpdateError = errors.new_class('UpdateError', {capture_stack = false})
 
@@ -21,7 +19,9 @@ local CRUD_UPDATE_FUNC_NAME = utils.get_storage_call(UPDATE_FUNC_NAME)
 
 local function update_on_storage(space_name, key, operations, field_names, opts)
     dev_checks('string', '?', 'table', '?table', {
-        -- bucket_id is optional to support old routers.
+        -- bucket_id is accepted for compatibility and ignored: the
+        -- request comes through vshard.storage.call, which holds
+        -- the bucket ref for the whole call.
         bucket_id = '?number|cdata',
         sharding_key_hash = '?number',
         sharding_func_hash = '?number',
@@ -46,34 +46,23 @@ local function update_on_storage(space_name, key, operations, field_names, opts)
         return nil, err
     end
 
-    -- Skip bucket reference if bucket_id is not provided to support old routers.
-    local ref_ok, bucket_ref_err, unref
-    if opts.bucket_id ~= nil then
-        ref_ok, bucket_ref_err, unref = bucket_ref_unref.bucket_refrw(opts.bucket_id, space.engine)
-        if not ref_ok then
-            return nil, bucket_ref_err
-        end
-    else
-        compat_warn.log_nil_bucket_id('update', space_name, space.engine)
-    end
-
     -- add_space_schema_hash is false because
     -- reloading space format on router can't avoid update error on storage
-    local res, err = schema.wrap_func_result(space, space.update, {
+    local res = schema.wrap_func_result(space, space.update, {
         add_space_schema_hash = false,
         field_names = field_names,
         noreturn = opts.noreturn,
         fetch_latest_metadata = opts.fetch_latest_metadata,
     }, space, key, operations)
 
-    if err == nil and res.err ~= nil and utils.is_field_not_found(res.err.code) then
+    if res.err ~= nil and utils.is_field_not_found(res.err.code) then
         -- Relevant for Tarantool older than 2.8.1.
         -- We can only add fields to end of the tuple.
         -- If schema is updated and nullable fields are added, then we will get error.
         -- Therefore, we need to add filling of intermediate nullable fields.
         -- More details: https://github.com/tarantool/tarantool/issues/3378
         operations = utils.add_intermediate_nullable_fields(operations, space:format(), space:get(key))
-        res, err = schema.wrap_func_result(space, space.update, {
+        res = schema.wrap_func_result(space, space.update, {
             add_space_schema_hash = false,
             field_names = field_names,
             noreturn = opts.noreturn,
@@ -81,14 +70,7 @@ local function update_on_storage(space_name, key, operations, field_names, opts)
         }, space, key, operations)
     end
 
-    if unref ~= nil then
-        local unref_ok, err_unref = unref(opts.bucket_id, space.engine)
-        if not unref_ok then
-            return nil, err_unref
-        end
-    end
-
-    return res, err
+    return res
 end
 
 update.storage_api = {[UPDATE_FUNC_NAME] = update_on_storage}
@@ -175,7 +157,7 @@ local function call_update_on_router(vshard_router, space_name, key, user_operat
         timeout = opts.timeout,
     }
 
-    local storage_result, err = call.single(vshard_router,
+    local storage_result, err = call.single_direct(vshard_router,
         bucket_id_data.bucket_id, CRUD_UPDATE_FUNC_NAME,
         {space_name, key, operations, opts.fields, update_on_storage_opts},
         call_opts

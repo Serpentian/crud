@@ -259,6 +259,48 @@ function call.single(vshard_router, bucket_id, func_name, func_args, opts)
     return res
 end
 
+--- Executes a single-bucket call through vshard.router.call*.
+---
+--- Unlike call.single, the request goes through the regular vshard
+--- storage.call wrapper: vshard takes the bucket ref for the whole
+--- call and performs its own retries and redirects on WRONG_BUCKET
+--- and alike, so no crud-side retry or recovery is needed.
+function call.single_direct(vshard_router, bucket_id, func_name, func_args, opts)
+    dev_checks('table', 'number|cdata', 'string', '?table', {
+        mode = 'string',
+        prefer_replica = '?boolean',
+        balance = '?boolean',
+        timeout = '?number',
+        request_timeout = '?number',
+    })
+
+    local vshard_call_name, err = call.get_vshard_call_name(opts.mode, opts.prefer_replica, opts.balance)
+    if err ~= nil then
+        return nil, err
+    end
+
+    local timeout = opts.timeout or const.DEFAULT_VSHARD_CALL_TIMEOUT
+    local request_timeout = opts.mode == 'read' and opts.request_timeout or nil
+    if request_timeout ~= nil and request_timeout > timeout then
+        -- vshard raises when request_timeout > timeout, the old
+        -- transport silently allowed it.
+        request_timeout = timeout
+    end
+
+    local res, err = vshard_router[vshard_call_name](vshard_router, bucket_id,
+        func_name, func_args,
+        {timeout = timeout, request_timeout = request_timeout})
+    if err ~= nil then
+        return nil, wrap_vshard_err(vshard_router, err, func_name, nil, bucket_id)
+    end
+
+    if res == box.NULL then
+        return nil
+    end
+
+    return res
+end
+
 function call.any(vshard_router, func_name, func_args, opts)
     dev_checks('table', 'string', '?table', {
         timeout = '?number',
