@@ -2,6 +2,7 @@ local checks = require('checks')
 local errors = require('errors')
 
 local call = require('crud.common.call')
+local storage_c = require('crud.common.storage_c')
 local const = require('crud.common.const')
 local utils = require('crud.common.utils')
 local sharding = require('crud.common.sharding')
@@ -15,7 +16,6 @@ local GetError = errors.new_class('GetError', {capture_stack = false})
 local get = {}
 
 local GET_FUNC_NAME = 'get_on_storage'
-local CRUD_GET_FUNC_NAME = utils.get_storage_call(GET_FUNC_NAME)
 
 local function get_on_storage(space_name, key, field_names, opts)
     dev_checks('string', '?', '?table', {
@@ -139,7 +139,7 @@ local function call_get_on_router(vshard_router, space_name, key, opts)
     }
 
     local storage_result, err = call.single_direct(vshard_router,
-        bucket_id_data.bucket_id, CRUD_GET_FUNC_NAME,
+        bucket_id_data.bucket_id, storage_c.func_name('get'),
         {space_name, key, opts.fields, get_on_storage_opts},
         call_opts
     )
