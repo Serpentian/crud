@@ -2,6 +2,7 @@ local checks = require('checks')
 local errors = require('errors')
 
 local call = require('crud.common.call')
+local storage_c = require('crud.common.storage_c')
 local const = require('crud.common.const')
 local utils = require('crud.common.utils')
 local sharding = require('crud.common.sharding')
@@ -13,7 +14,6 @@ local ReplaceError = errors.new_class('ReplaceError', { capture_stack = false })
 local replace = {}
 
 local REPLACE_FUNC_NAME = 'replace_on_storage'
-local CRUD_REPLACE_FUNC_NAME = utils.get_storage_call(REPLACE_FUNC_NAME)
 
 local function replace_on_storage(space_name, tuple, opts)
     dev_checks('string', 'table', {
@@ -100,7 +100,7 @@ local function call_replace_on_router(vshard_router, space_name, original_tuple,
         timeout = opts.timeout,
     }
     local storage_result, err = call.single_direct(vshard_router,
-        sharding_data.bucket_id, CRUD_REPLACE_FUNC_NAME,
+        sharding_data.bucket_id, storage_c.func_name('replace'),
         {space_name, tuple, replace_on_storage_opts},
         call_opts
     )

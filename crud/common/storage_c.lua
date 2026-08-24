@@ -35,17 +35,23 @@ local M = {
     end)(),
     -- Casted 'struct crud_storage_c_api *' after setup.
     api = nil,
-    -- Ops ported to C, appended one per commit.
+    -- Ops ported to C: op name -> C symbol. 'delete' is a
+    -- reserved word in C++, hence the trailing underscore.
     ops = {
-        get = true,
+        get = 'get',
+        replace = 'replace',
+        insert = 'insert',
+        update = 'update',
+        upsert = 'upsert',
+        delete = 'delete_',
     },
 }
 
 --- Storage function name for the op: the C one when the flag is
 --- on and the op is ported, the Lua one otherwise.
 function M.func_name(op)
-    if M.enabled and M.ops[op] then
-        return 'crud.storage_c.' .. op
+    if M.enabled and M.ops[op] ~= nil then
+        return 'crud.storage_c.' .. M.ops[op]
     end
     return utils.get_storage_call(op .. '_on_storage')
 end
@@ -135,8 +141,8 @@ end
 
 local function func_names()
     local names = {'crud.storage_c.setup'}
-    for op in pairs(M.ops) do
-        table.insert(names, 'crud.storage_c.' .. op)
+    for _, symbol in pairs(M.ops) do
+        table.insert(names, 'crud.storage_c.' .. symbol)
     end
     return names
 end

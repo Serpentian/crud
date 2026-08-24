@@ -613,3 +613,193 @@ get(box_function_ctx_t *ctx, const char *args, const char *args_end)
 	}
 	return reply_result(ctx, tuple, false);
 }
+
+/**
+ * Common part of the tuple-taking ops (insert, replace).
+ */
+static int
+tuple_op(box_function_ctx_t *ctx, const char *op, const char *args,
+	 const char *args_end,
+	 int (*box_op)(uint32_t, const char *, const char *, box_tuple_t **))
+{
+	const char *p = args;
+	if (mp_typeof(*p) != MP_ARRAY || mp_decode_array(&p) < 2)
+		return fallback(ctx, op, args, args_end);
+	const char *space;
+	uint32_t space_len;
+	int64_t space_id = decode_space(&p, &space, &space_len);
+	if (space_id < 0)
+		return fallback(ctx, op, args, args_end);
+	if (mp_typeof(*p) != MP_ARRAY)
+		return fallback(ctx, op, args, args_end);
+	const char *tuple = p;
+	mp_next(&p);
+	const char *tuple_end = p;
+	struct dml_opts o;
+	if (parse_opts(&p, args_end, &o) != 0)
+		return fallback(ctx, op, args, args_end);
+	if (!o.skip_sharding_hash_check &&
+	    check_sharding_hashes(space, space_len, o.has_func_hash,
+				  o.func_hash, o.has_key_hash,
+				  o.key_hash) != 0)
+		return fallback(ctx, op, args, args_end);
+	box_tuple_t *result;
+	if (box_op(space_id, tuple, tuple_end, &result) != 0) {
+		box_error_clear();
+		return fallback(ctx, op, args, args_end);
+	}
+	return reply_result(ctx, result, o.noreturn);
+}
+
+/**
+ * crud.storage_c.replace(space_name, tuple, opts)
+ */
+EXPORT int
+replace(box_function_ctx_t *ctx, const char *args, const char *args_end)
+{
+	return tuple_op(ctx, "replace", args, args_end, box_replace);
+}
+
+/**
+ * crud.storage_c.insert(space_name, tuple, opts)
+ */
+EXPORT int
+insert(box_function_ctx_t *ctx, const char *args, const char *args_end)
+{
+	return tuple_op(ctx, "insert", args, args_end, box_insert);
+}
+
+/**
+ * crud.storage_c.update(space_name, key, operations, field_names,
+ *                       opts)
+ */
+EXPORT int
+update(box_function_ctx_t *ctx, const char *args, const char *args_end)
+{
+	const char *p = args;
+	if (mp_typeof(*p) != MP_ARRAY || mp_decode_array(&p) < 3)
+		return fallback(ctx, "update", args, args_end);
+	const char *space;
+	uint32_t space_len;
+	int64_t space_id = decode_space(&p, &space, &space_len);
+	if (space_id < 0)
+		return fallback(ctx, "update", args, args_end);
+	const char *key, *key_end;
+	if (normalize_key(&p, &key, &key_end) != 0)
+		return fallback(ctx, "update", args, args_end);
+	if (mp_typeof(*p) != MP_ARRAY)
+		return fallback(ctx, "update", args, args_end);
+	const char *ops = p;
+	mp_next(&p);
+	const char *ops_end = p;
+	/* field_names must be absent - filtering stays in Lua. */
+	if (p < args_end) {
+		if (mp_typeof(*p) != MP_NIL)
+			return fallback(ctx, "update", args, args_end);
+		mp_decode_nil(&p);
+	}
+	struct dml_opts o;
+	if (parse_opts(&p, args_end, &o) != 0)
+		return fallback(ctx, "update", args, args_end);
+	if (!o.skip_sharding_hash_check &&
+	    check_sharding_hashes(space, space_len, o.has_func_hash,
+				  o.func_hash, o.has_key_hash,
+				  o.key_hash) != 0)
+		return fallback(ctx, "update", args, args_end);
+	box_tuple_t *result;
+	/*
+	 * index_base = 1: crud passes the operations in the Lua
+	 * convention. A failed update also covers the legacy
+	 * field-not-found retry, which lives in the Lua op.
+	 */
+	if (box_update(space_id, 0, key, key_end, ops, ops_end, 1,
+		       &result) != 0) {
+		box_error_clear();
+		return fallback(ctx, "update", args, args_end);
+	}
+	return reply_result(ctx, result, o.noreturn);
+}
+
+/**
+ * crud.storage_c.upsert(space_name, tuple, operations, opts)
+ */
+EXPORT int
+upsert(box_function_ctx_t *ctx, const char *args, const char *args_end)
+{
+	const char *p = args;
+	if (mp_typeof(*p) != MP_ARRAY || mp_decode_array(&p) < 3)
+		return fallback(ctx, "upsert", args, args_end);
+	const char *space;
+	uint32_t space_len;
+	int64_t space_id = decode_space(&p, &space, &space_len);
+	if (space_id < 0)
+		return fallback(ctx, "upsert", args, args_end);
+	if (mp_typeof(*p) != MP_ARRAY)
+		return fallback(ctx, "upsert", args, args_end);
+	const char *tuple = p;
+	mp_next(&p);
+	const char *tuple_end = p;
+	if (mp_typeof(*p) != MP_ARRAY)
+		return fallback(ctx, "upsert", args, args_end);
+	const char *ops = p;
+	mp_next(&p);
+	const char *ops_end = p;
+	struct dml_opts o;
+	if (parse_opts(&p, args_end, &o) != 0)
+		return fallback(ctx, "upsert", args, args_end);
+	if (!o.skip_sharding_hash_check &&
+	    check_sharding_hashes(space, space_len, o.has_func_hash,
+				  o.func_hash, o.has_key_hash,
+				  o.key_hash) != 0)
+		return fallback(ctx, "upsert", args, args_end);
+	box_tuple_t *result;
+	if (box_upsert(space_id, 0, tuple, tuple_end, ops, ops_end, 1,
+		       &result) != 0) {
+		box_error_clear();
+		return fallback(ctx, "upsert", args, args_end);
+	}
+	/* upsert never returns a tuple. */
+	return reply_result(ctx, NULL, true);
+}
+
+/**
+ * crud.storage_c.delete(space_name, key, field_names, opts)
+ *
+ * The symbol is 'delete_' - 'delete' is a C++ keyword and some
+ * toolchains dislike it; the Lua side registers the function
+ * under the name 'crud.storage_c.delete_'.
+ */
+EXPORT int
+delete_(box_function_ctx_t *ctx, const char *args, const char *args_end)
+{
+	const char *p = args;
+	if (mp_typeof(*p) != MP_ARRAY || mp_decode_array(&p) < 2)
+		return fallback(ctx, "delete", args, args_end);
+	const char *space;
+	uint32_t space_len;
+	int64_t space_id = decode_space(&p, &space, &space_len);
+	if (space_id < 0)
+		return fallback(ctx, "delete", args, args_end);
+	const char *key, *key_end;
+	if (normalize_key(&p, &key, &key_end) != 0)
+		return fallback(ctx, "delete", args, args_end);
+	if (p < args_end) {
+		if (mp_typeof(*p) != MP_NIL)
+			return fallback(ctx, "delete", args, args_end);
+		mp_decode_nil(&p);
+	}
+	struct dml_opts o;
+	if (parse_opts(&p, args_end, &o) != 0)
+		return fallback(ctx, "delete", args, args_end);
+	if (!o.skip_sharding_hash_check &&
+	    check_sharding_hashes(space, space_len, o.has_func_hash,
+				  o.func_hash, o.has_key_hash,
+				  o.key_hash) != 0)
+		return fallback(ctx, "delete", args, args_end);
+	box_tuple_t *result;
+	if (box_delete(space_id, 0, key, key_end, &result) != 0) {
+		box_error_clear();
+		return fallback(ctx, "delete", args, args_end);
+	}
+	return reply_result(ctx, result, o.noreturn);
+}
