@@ -18,14 +18,33 @@ local ddl_space = {
 
 local trigger_stash = stash.get(stash.name.ddl_triggers)
 
+-- Hooks into the C-side sharding hash cache (crud.storage_c).
+-- Set by crud.common.storage_c after its handshake; kept as a
+-- hook table to avoid a require cycle.
+local c_cache_invalidate = nil
+local c_cache_clear = nil
+
+function storage_metadata_cache.set_c_cache_hooks(invalidate, clear)
+    c_cache_invalidate = invalidate
+    c_cache_clear = clear
+end
+
+local function invalidate_c_cache(space_name)
+    if c_cache_invalidate ~= nil then
+        c_cache_invalidate(space_name)
+    end
+end
+
 local function update_sharding_func_hash(old, new)
     if new ~= nil then
         local space_name = new[utils.SPACE_NAME_FIELDNO]
         local sharding_func_def = utils.extract_sharding_func_def(new)
         cache_data[FUNC][space_name] = utils.compute_hash(sharding_func_def)
+        invalidate_c_cache(space_name)
     else
         local space_name = old[utils.SPACE_NAME_FIELDNO]
         cache_data[FUNC][space_name] = nil
+        invalidate_c_cache(space_name)
     end
 end
 
@@ -34,9 +53,11 @@ local function update_sharding_key_hash(old, new)
         local space_name = new[utils.SPACE_NAME_FIELDNO]
         local sharding_key_def = new[utils.SPACE_SHARDING_KEY_FIELDNO]
         cache_data[KEY][space_name] = utils.compute_hash(sharding_key_def)
+        invalidate_c_cache(space_name)
     else
         local space_name = old[utils.SPACE_NAME_FIELDNO]
         cache_data[KEY][space_name] = nil
+        invalidate_c_cache(space_name)
     end
 end
 
@@ -100,6 +121,9 @@ end
 
 function storage_metadata_cache.drop_caches()
     cache_data = {}
+    if c_cache_clear ~= nil then
+        c_cache_clear()
+    end
 end
 
 return storage_metadata_cache

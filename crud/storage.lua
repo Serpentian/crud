@@ -5,6 +5,7 @@ local stash = require('crud.common.stash')
 local utils = require('crud.common.utils')
 
 local schema = require('crud.schema')
+local storage_c = require('crud.common.storage_c')
 local call = require('crud.common.call')
 local sharding_metadata = require('crud.common.sharding.sharding_metadata')
 local insert = require('crud.insert')
@@ -111,6 +112,7 @@ local function init_impl()
     end
 
     schema.init()
+    storage_c.init_storage()
 end
 
 function storage.init(opts)
